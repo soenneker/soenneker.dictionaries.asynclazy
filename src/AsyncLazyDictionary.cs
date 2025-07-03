@@ -10,7 +10,7 @@ using Soenneker.Extensions.ValueTask;
 namespace Soenneker.Dictionaries.AsyncLazy;
 
 /// <inheritdoc cref="IAsyncLazyDictionary{TKey, TValue}"/>
-public class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKey, TValue> where TKey : notnull
+public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKey, TValue> where TKey : notnull
 {
     private readonly ConcurrentDictionary<TKey, TValue> _dict = new();
     private readonly ConcurrentDictionary<TKey, ValueTask<TValue>> _valueTaskDict = new();
@@ -78,7 +78,5 @@ public class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKey, TVal
 
         _dict.Clear();
         _valueTaskDict.Clear();
-
-        GC.SuppressFinalize(this);
     }
 }
