@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Nito.AsyncEx;
+using Soenneker.Asyncs.Locks;
 using Soenneker.Dictionaries.AsyncLazy.Abstract;
 using Soenneker.Extensions.ValueTask;
 
@@ -34,7 +34,7 @@ public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKe
 
     private async ValueTask<TValue> CreateValueTask(Func<CancellationToken, ValueTask<TValue>> factory, TKey key, CancellationToken cancellationToken)
     {
-        using (await _lock.LockAsync(cancellationToken).ConfigureAwait(false))
+        using (await _lock.Lock(cancellationToken).NoSync())
         {
             // Second check inside lock to prevent duplicate execution
             if (_dict.TryGetValue(key, out TValue? existingValue))
@@ -53,7 +53,7 @@ public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKe
         if (_disposed)
             throw new ObjectDisposedException(nameof(AsyncLazyDictionary<TKey, TValue>));
 
-        using (await _lock.LockAsync(cancellationToken).ConfigureAwait(false))
+        using (await _lock.Lock(cancellationToken).NoSync())
         {
             _dict.TryRemove(key, out _);
             _valueTaskDict.TryRemove(key, out _);
@@ -70,7 +70,7 @@ public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKe
         foreach (KeyValuePair<TKey, TValue> kvp in _dict)
         {
             if (kvp.Value is IAsyncDisposable asyncDisposable)
-                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                await asyncDisposable.DisposeAsync().NoSync();
 
             else if (kvp.Value is IDisposable disposable)
                 disposable.Dispose();
