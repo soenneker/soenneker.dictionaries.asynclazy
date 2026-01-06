@@ -4,79 +4,105 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Soenneker.Asyncs.Locks;
+using Soenneker.Atomics.ValueBools;
 using Soenneker.Dictionaries.AsyncLazy.Abstract;
 using Soenneker.Extensions.ValueTask;
 
 namespace Soenneker.Dictionaries.AsyncLazy;
 
-/// <inheritdoc cref="IAsyncLazyDictionary{TKey, TValue}"/>
+/// <inheritdoc cref="IAsyncLazyDictionary{TKey,TValue}"/>
 public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKey, TValue> where TKey : notnull
 {
     private readonly ConcurrentDictionary<TKey, TValue> _dict = new();
     private readonly ConcurrentDictionary<TKey, ValueTask<TValue>> _valueTaskDict = new();
     private readonly AsyncLock _lock = new();
-    private bool _disposed;
+
+    private ValueAtomicBool _disposed;
 
     public async ValueTask<TValue> Get(TKey key, Func<CancellationToken, ValueTask<TValue>> factory, CancellationToken cancellationToken = default)
     {
-        if (_disposed)
+        if (_disposed.Read())
             throw new ObjectDisposedException(nameof(AsyncLazyDictionary<TKey, TValue>));
 
-        // First check before locking
-        if (_dict.TryGetValue(key, out TValue? existingValue))
-            return existingValue;
+        // Fast path: value already materialized
+        if (_dict.TryGetValue(key, out TValue? existing))
+            return existing;
 
-        // Ensure only one factory execution per key by storing in a temporary ValueTask dictionary
-        ValueTask<TValue> newTask = _valueTaskDict.GetOrAdd(key, _ => CreateValueTask(factory, key, cancellationToken));
+        // Fast path: in-flight ValueTask already exists
+        if (_valueTaskDict.TryGetValue(key, out ValueTask<TValue> inflight))
+            return await inflight.ConfigureAwait(false);
 
-        return await newTask.ConfigureAwait(false);
+        while (true)
+        {
+            if (_disposed.Read())
+                throw new ObjectDisposedException(nameof(AsyncLazyDictionary<TKey, TValue>));
+
+            ValueTask<TValue> created = CreateValueTask(factory, key, cancellationToken);
+
+            if (_valueTaskDict.TryAdd(key, created))
+                return await created.ConfigureAwait(false);
+
+            if (_valueTaskDict.TryGetValue(key, out inflight))
+                return await inflight.ConfigureAwait(false);
+        }
     }
 
     private async ValueTask<TValue> CreateValueTask(Func<CancellationToken, ValueTask<TValue>> factory, TKey key, CancellationToken cancellationToken)
     {
-        using (await _lock.Lock(cancellationToken).NoSync())
+        using (await _lock.Lock(cancellationToken)
+                          .NoSync())
         {
-            // Second check inside lock to prevent duplicate execution
-            if (_dict.TryGetValue(key, out TValue? existingValue))
-                return existingValue;
+            if (_disposed.Read())
+                throw new ObjectDisposedException(nameof(AsyncLazyDictionary<TKey, TValue>));
 
-            TValue value = await factory(cancellationToken).NoSync();
+            if (_dict.TryGetValue(key, out TValue? existing))
+                return existing;
 
-            _dict[key] = value; // Store the final value
-            _valueTaskDict.TryRemove(key, out _); // Clean up the task dictionary
-            return value;
+            try
+            {
+                TValue value = await factory(cancellationToken)
+                    .NoSync();
+                _dict[key] = value;
+                return value;
+            }
+            finally
+            {
+                _valueTaskDict.TryRemove(key, out _);
+            }
         }
     }
 
-    public async ValueTask Remove(TKey key, CancellationToken cancellationToken = default)
+    public ValueTask Remove(TKey key, CancellationToken cancellationToken = default)
     {
-        if (_disposed)
+        if (_disposed.Read())
             throw new ObjectDisposedException(nameof(AsyncLazyDictionary<TKey, TValue>));
 
-        using (await _lock.Lock(cancellationToken).NoSync())
-        {
-            _dict.TryRemove(key, out _);
-            _valueTaskDict.TryRemove(key, out _);
-        }
+        _dict.TryRemove(key, out _);
+        _valueTaskDict.TryRemove(key, out _);
+        return ValueTask.CompletedTask;
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed)
+        // Ensure dispose runs exactly once
+        if (!_disposed.TrySetTrue())
             return;
-
-        _disposed = true;
 
         foreach (KeyValuePair<TKey, TValue> kvp in _dict)
         {
             if (kvp.Value is IAsyncDisposable asyncDisposable)
-                await asyncDisposable.DisposeAsync().NoSync();
-
+                await asyncDisposable.DisposeAsync()
+                                     .NoSync();
             else if (kvp.Value is IDisposable disposable)
                 disposable.Dispose();
         }
 
         _dict.Clear();
         _valueTaskDict.Clear();
+    }
+
+    public void Dispose()
+    {
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }

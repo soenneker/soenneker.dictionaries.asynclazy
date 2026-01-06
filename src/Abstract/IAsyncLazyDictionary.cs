@@ -7,7 +7,7 @@ namespace Soenneker.Dictionaries.AsyncLazy.Abstract
     /// <summary>
     /// Defines a thread-safe, asynchronous, and lazy-loaded dictionary that ensures a single execution of the factory function per key.
     /// </summary>
-    public interface IAsyncLazyDictionary<TKey, TValue> : IAsyncDisposable where TKey : notnull
+    public interface IAsyncLazyDictionary<TKey, TValue> : IAsyncDisposable, IDisposable where TKey : notnull
     {
         /// <summary>
         /// Retrieves the value associated with the specified key.
