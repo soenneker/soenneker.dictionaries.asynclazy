@@ -30,7 +30,7 @@ public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKe
 
         // Fast path: in-flight ValueTask already exists
         if (_valueTaskDict.TryGetValue(key, out ValueTask<TValue> inflight))
-            return await inflight.ConfigureAwait(false);
+            return await inflight.NoSync();
 
         while (true)
         {
@@ -40,10 +40,10 @@ public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKe
             ValueTask<TValue> created = CreateValueTask(factory, key, cancellationToken);
 
             if (_valueTaskDict.TryAdd(key, created))
-                return await created.ConfigureAwait(false);
+                return await created.NoSync();
 
             if (_valueTaskDict.TryGetValue(key, out inflight))
-                return await inflight.ConfigureAwait(false);
+                return await inflight.NoSync();
         }
     }
 
