@@ -103,6 +103,6 @@ public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKe
 
     public void Dispose()
     {
-        DisposeAsync().AsTask().GetAwaiter().GetResult();
+        DisposeAsync().GetAwaiter().GetResult();
     }
 }
