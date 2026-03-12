@@ -27,7 +27,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\src\Soenneker.Dictionaries.AsyncLazy.csproj" />
+        <ProjectReference Include="..\..\src\Soenneker.Dictionaries.AsyncLazy\Soenneker.Dictionaries.AsyncLazy.csproj" />
     </ItemGroup>
 
     <ItemGroup>
