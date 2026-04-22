@@ -1,23 +1,21 @@
-﻿using AwesomeAssertions;
-using Soenneker.Tests.FixturedUnit;
+using AwesomeAssertions;
+using Soenneker.Tests.HostedUnit;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Xunit;
 
 namespace Soenneker.Dictionaries.AsyncLazy.Tests;
 
-[Collection("Collection")]
-public class AsyncLazyDictionaryTests : FixturedUnitTest
+[ClassDataSource<Host>(Shared = SharedType.PerTestSession)]
+public class AsyncLazyDictionaryTests : HostedUnitTest
 {
     private readonly AsyncLazyDictionary<string, int> _dictionary = new();
 
-    public AsyncLazyDictionaryTests(Fixture fixture, ITestOutputHelper output) : base(fixture, output)
+    public AsyncLazyDictionaryTests(Host host) : base(host)
     {
     }
 
-
-    [Fact]
+    [Test]
     public async Task Get_ShouldReturnStoredValue_WhenCalledMultipleTimes()
     {
         // Arrange
@@ -34,7 +32,7 @@ public class AsyncLazyDictionaryTests : FixturedUnitTest
         secondResult.Should().Be(expectedValue);
     }
 
-    [Fact]
+    [Test]
     public async Task Get_ShouldCallFactoryOnlyOnce_ForSameKey()
     {
         // Arrange
@@ -54,7 +52,7 @@ public class AsyncLazyDictionaryTests : FixturedUnitTest
         counter.Should().Be(1);
     }
 
-    [Fact]
+    [Test]
     public async Task Remove_ShouldDeleteKey()
     {
         // Arrange
@@ -70,7 +68,7 @@ public class AsyncLazyDictionaryTests : FixturedUnitTest
         await action.Should().ThrowAsync<InvalidOperationException>();
     }
 
-    [Fact]
+    [Test]
     public async Task Dispose_ShouldPreventFurtherOperations()
     {
         // Arrange
@@ -86,7 +84,7 @@ public class AsyncLazyDictionaryTests : FixturedUnitTest
         await action.Should().ThrowAsync<ObjectDisposedException>();
     }
 
-    [Fact]
+    [Test]
     public async Task Get_ShouldNotCallFactoryTwice_IfConcurrentCallsAreMade()
     {
         // Arrange
