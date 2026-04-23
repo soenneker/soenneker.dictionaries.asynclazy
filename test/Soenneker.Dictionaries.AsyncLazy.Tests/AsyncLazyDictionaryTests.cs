@@ -24,8 +24,8 @@ public class AsyncLazyDictionaryTests : HostedUnitTest
         Func<CancellationToken, ValueTask<int>> factory = _ => new ValueTask<int>(expectedValue);
 
         // Act
-        int firstResult = await _dictionary.Get(key, factory, CancellationToken);
-        int secondResult = await _dictionary.Get(key, factory, CancellationToken);
+        int firstResult = await _dictionary.Get(key, factory, CancellationToken.None);
+        int secondResult = await _dictionary.Get(key, factory, CancellationToken.None);
 
         // Assert
         firstResult.Should().Be(expectedValue);
@@ -45,8 +45,8 @@ public class AsyncLazyDictionaryTests : HostedUnitTest
         };
 
         // Act
-        _ = await _dictionary.Get(key, factory, CancellationToken);
-        _ = await _dictionary.Get(key, factory, CancellationToken);
+        _ = await _dictionary.Get(key, factory, CancellationToken.None);
+        _ = await _dictionary.Get(key, factory, CancellationToken.None);
 
         // Assert
         counter.Should().Be(1);
@@ -58,11 +58,11 @@ public class AsyncLazyDictionaryTests : HostedUnitTest
         // Arrange
         string key = "test";
         Func<CancellationToken, ValueTask<int>> factory = _ => new ValueTask<int>(42);
-        _ = await _dictionary.Get(key, factory, CancellationToken);
+        _ = await _dictionary.Get(key, factory, CancellationToken.None);
 
         // Act
-        await _dictionary.Remove(key, CancellationToken);
-        Func<Task<int>> action = async () => await _dictionary.Get(key, _ => throw new InvalidOperationException(), CancellationToken);
+        await _dictionary.Remove(key, CancellationToken.None);
+        Func<Task<int>> action = async () => await _dictionary.Get(key, _ => throw new InvalidOperationException(), CancellationToken.None);
 
         // Assert
         await action.Should().ThrowAsync<InvalidOperationException>();
@@ -74,11 +74,11 @@ public class AsyncLazyDictionaryTests : HostedUnitTest
         // Arrange
         string key = "test";
         Func<CancellationToken, ValueTask<int>> factory = _ => new ValueTask<int>(42);
-        _ = await _dictionary.Get(key, factory, CancellationToken);
+        _ = await _dictionary.Get(key, factory, CancellationToken.None);
 
         // Act
         await _dictionary.DisposeAsync();
-        Func<Task<int>> action = async () => await _dictionary.Get(key, factory, CancellationToken);
+        Func<Task<int>> action = async () => await _dictionary.Get(key, factory, CancellationToken.None);
 
         // Assert
         await action.Should().ThrowAsync<ObjectDisposedException>();
@@ -97,8 +97,8 @@ public class AsyncLazyDictionaryTests : HostedUnitTest
         };
 
         // Act
-        Task<int> task1 = _dictionary.Get(key, factory, CancellationToken).AsTask();
-        Task<int> task2 = _dictionary.Get(key, factory, CancellationToken).AsTask();
+        Task<int> task1 = _dictionary.Get(key, factory, CancellationToken.None).AsTask();
+        Task<int> task2 = _dictionary.Get(key, factory, CancellationToken.None).AsTask();
 
         await Task.WhenAll(task1, task2);
 
