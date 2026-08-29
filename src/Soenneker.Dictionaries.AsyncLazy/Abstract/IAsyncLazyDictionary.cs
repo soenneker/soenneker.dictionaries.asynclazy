@@ -23,8 +23,9 @@ namespace Soenneker.Dictionaries.AsyncLazy.Abstract
         /// Removes the value associated with the specified key.
         /// If the key is not found, no action is taken.
         /// </summary>
-        /// <param name="key">The key whose value should be removed.</param>
+        /// <param name="key">Key used to locate the target entry.</param>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A task that completes when the remove operation is complete.</returns>
         ValueTask Remove(TKey key, CancellationToken cancellationToken = default);
     }
 }
