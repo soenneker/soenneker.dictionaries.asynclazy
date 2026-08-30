@@ -105,4 +105,52 @@ public class AsyncLazyDictionaryTests : HostedUnitTest
         // Assert
         counter.Should().Be(1);
     }
+
+    [Test]
+    public async Task Get_ShouldInitializeDifferentKeysConcurrently()
+    {
+        var firstEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Task<int> first = _dictionary.Get("first", async _ =>
+        {
+            firstEntered.SetResult();
+            await release.Task;
+            return 1;
+        }).AsTask();
+
+        Task<int> second = _dictionary.Get("second", async _ =>
+        {
+            secondEntered.SetResult();
+            await release.Task;
+            return 2;
+        }).AsTask();
+
+        await Task.WhenAll(firstEntered.Task, secondEntered.Task).WaitAsync(TimeSpan.FromSeconds(2));
+        release.SetResult();
+
+        (await first).Should().Be(1);
+        (await second).Should().Be(2);
+    }
+
+    [Test]
+    public async Task Remove_ShouldDisposeMaterializedValue()
+    {
+        var dictionary = new AsyncLazyDictionary<string, DisposableValue>();
+        var value = new DisposableValue();
+
+        _ = await dictionary.Get("value", _ => new ValueTask<DisposableValue>(value));
+        await dictionary.Remove("value");
+
+        value.Disposed.Should().BeTrue();
+        await dictionary.DisposeAsync();
+    }
+
+    private sealed class DisposableValue : IDisposable
+    {
+        internal bool Disposed { get; private set; }
+
+        public void Dispose() => Disposed = true;
+    }
 }

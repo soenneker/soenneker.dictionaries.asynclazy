@@ -1,115 +1,141 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Soenneker.Asyncs.Locks;
-using Soenneker.Atomics.ValueBools;
 using Soenneker.Dictionaries.AsyncLazy.Abstract;
-using Soenneker.Extensions.ValueTask;
 
 namespace Soenneker.Dictionaries.AsyncLazy;
 
-/// <inheritdoc cref="IAsyncLazyDictionary{TKey, TValue}"/>
 public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKey, TValue> where TKey : notnull
 {
-    private readonly ConcurrentDictionary<TKey, TValue> _dict = new();
-    private readonly ConcurrentDictionary<TKey, ValueTask<TValue>> _valueTaskDict = new();
-    private readonly AsyncLock _lock = new();
-
-    private ValueAtomicBool _disposed;
+    private readonly ConcurrentDictionary<TKey, Entry> _entries = new();
+    private readonly object _lifecycleLock = new();
+    private bool _disposed;
 
     public async ValueTask<TValue> Get(TKey key, Func<CancellationToken, ValueTask<TValue>> factory, CancellationToken cancellationToken = default)
     {
-        if (_disposed.Read())
-            throw new ObjectDisposedException(nameof(AsyncLazyDictionary<TKey, TValue>));
+        Task<TValue> task;
 
-        // Fast path: value already materialized
-        if (_dict.TryGetValue(key, out TValue? existing))
-            return existing;
-
-        // Fast path: in-flight ValueTask already exists
-        if (_valueTaskDict.TryGetValue(key, out ValueTask<TValue> inflight))
-            return await inflight.NoSync();
-
-        while (true)
+        lock (_lifecycleLock)
         {
-            if (_disposed.Read())
-                throw new ObjectDisposedException(nameof(AsyncLazyDictionary<TKey, TValue>));
+            ThrowIfDisposed();
 
-            ValueTask<TValue> created = CreateValueTask(factory, key, cancellationToken);
+            Entry? candidate = null;
+            candidate = new Entry(() => CreateValue(key, candidate!, factory, cancellationToken));
+            Entry entry = _entries.GetOrAdd(key, candidate);
+            task = entry.Value.Value;
+        }
 
-            if (_valueTaskDict.TryAdd(key, created))
-                return await created.NoSync();
+        return await task.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
 
-            if (_valueTaskDict.TryGetValue(key, out inflight))
-                return await inflight.NoSync();
+    private async Task<TValue> CreateValue(TKey key, Entry entry, Func<CancellationToken, ValueTask<TValue>> factory,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await factory(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            lock (_lifecycleLock)
+            {
+                if (_entries.TryGetValue(key, out Entry? current) && ReferenceEquals(current, entry))
+                    _entries.TryRemove(key, out _);
+            }
+
+            throw;
         }
     }
 
-    private async ValueTask<TValue> CreateValueTask(Func<CancellationToken, ValueTask<TValue>> factory, TKey key, CancellationToken cancellationToken)
+    public async ValueTask Remove(TKey key, CancellationToken cancellationToken = default)
     {
-        using (await _lock.Lock(cancellationToken)
-                          .NoSync())
-        {
-            if (_disposed.Read())
-                throw new ObjectDisposedException(nameof(AsyncLazyDictionary<TKey, TValue>));
+        Entry? entry;
 
-            if (_dict.TryGetValue(key, out TValue? existing))
-                return existing;
+        lock (_lifecycleLock)
+        {
+            ThrowIfDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+            _entries.TryRemove(key, out entry);
+        }
+
+        if (entry is null || !entry.Value.IsValueCreated)
+            return;
+
+        TValue value;
+
+        try
+        {
+            value = await entry.Value.Value.ConfigureAwait(false);
+        }
+        catch
+        {
+            return; // A failed factory has no value to dispose.
+        }
+
+        await DisposeValue(value).ConfigureAwait(false);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        KeyValuePair<TKey, Entry>[] entries;
+
+        lock (_lifecycleLock)
+        {
+            if (_disposed)
+                return;
+
+            _disposed = true;
+            entries = _entries.ToArray();
+            _entries.Clear();
+        }
+
+        for (var i = 0; i < entries.Length; i++)
+        {
+            Entry entry = entries[i].Value;
+
+            if (!entry.Value.IsValueCreated)
+                continue;
+
+            TValue value;
 
             try
             {
-                TValue value = await factory(cancellationToken)
-                    .NoSync();
-                _dict[key] = value;
-                return value;
+                value = await entry.Value.Value.ConfigureAwait(false);
             }
-            finally
+            catch
             {
-                _valueTaskDict.TryRemove(key, out _);
+                continue; // A failed factory has no value to dispose.
             }
+
+            await DisposeValue(value).ConfigureAwait(false);
         }
     }
 
-    public ValueTask Remove(TKey key, CancellationToken cancellationToken = default)
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+    private void ThrowIfDisposed()
     {
-        if (_disposed.Read())
+        if (_disposed)
             throw new ObjectDisposedException(nameof(AsyncLazyDictionary<TKey, TValue>));
-
-        _dict.TryRemove(key, out _);
-        _valueTaskDict.TryRemove(key, out _);
-        return ValueTask.CompletedTask;
     }
 
-    /// <summary>
-    /// Asynchronously releases resources used by the current instance.
-    /// </summary>
-    /// <returns>A task that represents the asynchronous operation.</returns>
-    public async ValueTask DisposeAsync()
+    private static async ValueTask DisposeValue(TValue value)
     {
-        // Ensure dispose runs exactly once
-        if (!_disposed.TrySetTrue())
-            return;
+        if (value is IAsyncDisposable asyncDisposable)
+            await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+        else if (value is IDisposable disposable)
+            disposable.Dispose();
+    }
 
-        foreach (KeyValuePair<TKey, TValue> kvp in _dict)
+    private sealed class Entry
+    {
+        internal readonly Lazy<Task<TValue>> Value;
+
+        internal Entry(Func<Task<TValue>> factory)
         {
-            if (kvp.Value is IAsyncDisposable asyncDisposable)
-                await asyncDisposable.DisposeAsync()
-                                     .NoSync();
-            else if (kvp.Value is IDisposable disposable)
-                disposable.Dispose();
+            Value = new Lazy<Task<TValue>>(factory, LazyThreadSafetyMode.ExecutionAndPublication);
         }
-
-        _dict.Clear();
-        _valueTaskDict.Clear();
-    }
-
-    /// <summary>
-    /// Releases resources used by the current instance.
-    /// </summary>
-    public void Dispose()
-    {
-        DisposeAsync().GetAwaiter().GetResult();
     }
 }

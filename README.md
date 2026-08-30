@@ -3,40 +3,53 @@
 [![](https://img.shields.io/nuget/dt/soenneker.dictionaries.asynclazy.svg?style=for-the-badge)](https://www.nuget.org/packages/soenneker.dictionaries.asynclazy/)
 [![](https://img.shields.io/github/actions/workflow/status/soenneker/soenneker.dictionaries.asynclazy/codeql.yml?label=CodeQL&style=for-the-badge)](https://github.com/soenneker/soenneker.dictionaries.asynclazy/actions/workflows/codeql.yml)
 
-# ![](https://user-images.githubusercontent.com/4441470/224455560-91ed3ee7-f510-4041-a8d2-3fc093025112.png) Soenneker.Dictionaries.AsyncLazy
-### A thread-safe dictionary that lazily initializes values asynchronously with automatic disposal
+# Soenneker.Dictionaries.AsyncLazy
 
-A high-performance asynchronous lazy-loading dictionary in C#, designed to ensure only one factory execution per key while supporting concurrent access.
+A concurrent dictionary that runs at most one asynchronous value factory per key, caches successful results, and disposes removed values it owns.
 
 ## Installation
 
-```
+```bash
 dotnet add package Soenneker.Dictionaries.AsyncLazy
 ```
 
 ## Usage
 
-### Basic Example
-
 ```csharp
-var dictionary = new AsyncLazyDictionary<string, string>();
+using Soenneker.Dictionaries.AsyncLazy;
 
-string result = await dictionary.Get("greeting", async () => {
-    await Task.Delay(1000, token); // Simulate data fetching
-    return "Hello, World!";
-});
+await using var clients = new AsyncLazyDictionary<string, ApiClient>();
 
-Console.WriteLine(result); // "Hello, World!"
+ApiClient client = await clients.Get(
+    "billing",
+    async cancellationToken =>
+    {
+        ApiClient created = await ApiClient.Connect(cancellationToken);
+        return created;
+    },
+    cancellationToken);
 ```
 
-### Removing an Entry
+Concurrent callers for `"billing"` await the same factory task and receive the same instance. Factories for different keys run concurrently.
+
+The factory and its cancellation token come from the call that wins creation for the key. Cancellation of that factory cancels the shared initialization. Other callers can cancel their own wait without removing an initialization that is still running.
+
+## Failures and retries
+
+A faulted or canceled factory is removed from the dictionary. The failing callers observe the original exception, and a later `Get` can run a new factory:
 
 ```csharp
-await dictionary.Remove("greeting");
+ApiClient client = await clients.Get("billing", ConnectWithRetryPolicy, cancellationToken);
 ```
 
-### Proper Disposal
+The dictionary does not add retries itself; put retry policy inside the factory when appropriate.
+
+## Removal and disposal
 
 ```csharp
-await dictionary.DisposeAsync();
+await clients.Remove("billing", cancellationToken);
 ```
+
+`Remove` evicts the entry. If initialization has started, removal waits for it to finish and then disposes the value. `IAsyncDisposable` is preferred over `IDisposable`. Coordinate removal with active consumers; an object should not be used after its entry is removed.
+
+Disposing the dictionary prevents new operations, waits for in-flight factories, and disposes every successfully materialized cached value. Factories that return shared objects should wrap them in a non-owning value or avoid this dictionary, because cached values are treated as dictionary-owned.
