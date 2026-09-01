@@ -1,3 +1,5 @@
+using Soenneker.Extensions.ValueTask;
+using Soenneker.Extensions.Task;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -27,7 +29,7 @@ public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKe
             task = entry.Value.Value;
         }
 
-        return await task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        return await task.WaitAsync(cancellationToken).NoSync();
     }
 
     private async Task<TValue> CreateValue(TKey key, Entry entry, Func<CancellationToken, ValueTask<TValue>> factory,
@@ -35,7 +37,7 @@ public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKe
     {
         try
         {
-            return await factory(cancellationToken).ConfigureAwait(false);
+            return await factory(cancellationToken).NoSync();
         }
         catch
         {
@@ -67,14 +69,14 @@ public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKe
 
         try
         {
-            value = await entry.Value.Value.ConfigureAwait(false);
+            value = await entry.Value.Value.NoSync();
         }
         catch
         {
             return; // A failed factory has no value to dispose.
         }
 
-        await DisposeValue(value).ConfigureAwait(false);
+        await DisposeValue(value).NoSync();
     }
 
     public async ValueTask DisposeAsync()
@@ -102,14 +104,14 @@ public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKe
 
             try
             {
-                value = await entry.Value.Value.ConfigureAwait(false);
+                value = await entry.Value.Value.NoSync();
             }
             catch
             {
                 continue; // A failed factory has no value to dispose.
             }
 
-            await DisposeValue(value).ConfigureAwait(false);
+            await DisposeValue(value).NoSync();
         }
     }
 
@@ -124,7 +126,7 @@ public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKe
     private static async ValueTask DisposeValue(TValue value)
     {
         if (value is IAsyncDisposable asyncDisposable)
-            await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+            await asyncDisposable.DisposeAsync().NoSync();
         else if (value is IDisposable disposable)
             disposable.Dispose();
     }
