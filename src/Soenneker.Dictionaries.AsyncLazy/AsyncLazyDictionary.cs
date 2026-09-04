@@ -9,6 +9,7 @@ using Soenneker.Dictionaries.AsyncLazy.Abstract;
 
 namespace Soenneker.Dictionaries.AsyncLazy;
 
+/// <inheritdoc cref="IAsyncLazyDictionary{TKey, TValue}" />
 public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKey, TValue> where TKey : notnull
 {
     private readonly ConcurrentDictionary<TKey, Entry> _entries = new();
