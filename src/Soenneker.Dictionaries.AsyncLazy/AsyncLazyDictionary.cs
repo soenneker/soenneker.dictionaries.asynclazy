@@ -1,7 +1,7 @@
 using Soenneker.Extensions.ValueTask;
 using Soenneker.Extensions.Task;
 using System;
-using System.Collections.Concurrent;
+using System.Linq;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,7 +12,7 @@ namespace Soenneker.Dictionaries.AsyncLazy;
 /// <inheritdoc cref="IAsyncLazyDictionary{TKey, TValue}" />
 public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKey, TValue> where TKey : notnull
 {
-    private readonly ConcurrentDictionary<TKey, Entry> _entries = new();
+    private readonly Dictionary<TKey, Entry> _entries = new();
     private readonly object _lifecycleLock = new();
     private bool _disposed;
 
@@ -24,13 +24,20 @@ public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKe
         {
             ThrowIfDisposed();
 
-            Entry? candidate = null;
-            candidate = new Entry(() => CreateValue(key, candidate!, factory, cancellationToken));
-            Entry entry = _entries.GetOrAdd(key, candidate);
+            if (!_entries.TryGetValue(key, out Entry? entry))
+                entry = CreateEntry(key, factory, cancellationToken);
             task = entry.Value.Value;
         }
 
         return await task.WaitAsync(cancellationToken).NoSync();
+    }
+
+    private Entry CreateEntry(TKey key, Func<CancellationToken, ValueTask<TValue>> factory, CancellationToken cancellationToken)
+    {
+        Entry? candidate = null;
+        candidate = new Entry(() => CreateValue(key, candidate!, factory, cancellationToken));
+        _entries.Add(key, candidate);
+        return candidate;
     }
 
     private async Task<TValue> CreateValue(TKey key, Entry entry, Func<CancellationToken, ValueTask<TValue>> factory,
@@ -45,7 +52,7 @@ public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKe
             lock (_lifecycleLock)
             {
                 if (_entries.TryGetValue(key, out Entry? current) && ReferenceEquals(current, entry))
-                    _entries.TryRemove(key, out _);
+                    _entries.Remove(key, out _);
             }
 
             throw;
@@ -60,7 +67,7 @@ public sealed class AsyncLazyDictionary<TKey, TValue> : IAsyncLazyDictionary<TKe
         {
             ThrowIfDisposed();
             cancellationToken.ThrowIfCancellationRequested();
-            _entries.TryRemove(key, out entry);
+            _entries.Remove(key, out entry);
         }
 
         if (entry is null || !entry.Value.IsValueCreated)
