@@ -16,7 +16,7 @@ public class AsyncLazyDictionaryTests : HostedUnitTest
     }
 
     [Test]
-    public async Task Get_ShouldReturnStoredValue_WhenCalledMultipleTimes(CancellationToken cancellationToken)
+    public async ValueTask Get_ShouldReturnStoredValue_WhenCalledMultipleTimes(CancellationToken cancellationToken)
     {
         // Arrange
         string key = "test";
@@ -33,7 +33,7 @@ public class AsyncLazyDictionaryTests : HostedUnitTest
     }
 
     [Test]
-    public async Task Get_ShouldCallFactoryOnlyOnce_ForSameKey(CancellationToken cancellationToken)
+    public async ValueTask Get_ShouldCallFactoryOnlyOnce_ForSameKey(CancellationToken cancellationToken)
     {
         // Arrange
         string key = "test";
@@ -53,7 +53,7 @@ public class AsyncLazyDictionaryTests : HostedUnitTest
     }
 
     [Test]
-    public async Task Remove_ShouldDeleteKey(CancellationToken cancellationToken)
+    public async ValueTask Remove_ShouldDeleteKey(CancellationToken cancellationToken)
     {
         // Arrange
         string key = "test";
@@ -69,7 +69,7 @@ public class AsyncLazyDictionaryTests : HostedUnitTest
     }
 
     [Test]
-    public async Task Dispose_ShouldPreventFurtherOperations(CancellationToken cancellationToken)
+    public async ValueTask Dispose_ShouldPreventFurtherOperations(CancellationToken cancellationToken)
     {
         // Arrange
         string key = "test";
@@ -85,7 +85,7 @@ public class AsyncLazyDictionaryTests : HostedUnitTest
     }
 
     [Test]
-    public async Task Get_ShouldNotCallFactoryTwice_IfConcurrentCallsAreMade(CancellationToken cancellationToken)
+    public async ValueTask Get_ShouldNotCallFactoryTwice_IfConcurrentCallsAreMade(CancellationToken cancellationToken)
     {
         // Arrange
         string key = "test";
@@ -107,7 +107,7 @@ public class AsyncLazyDictionaryTests : HostedUnitTest
     }
 
     [Test]
-    public async Task Get_ShouldInitializeDifferentKeysConcurrently(CancellationToken cancellationToken)
+    public async ValueTask Get_ShouldInitializeDifferentKeysConcurrently(CancellationToken cancellationToken)
     {
         var firstEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -135,7 +135,7 @@ public class AsyncLazyDictionaryTests : HostedUnitTest
     }
 
     [Test]
-    public async Task Remove_ShouldDisposeMaterializedValue(CancellationToken cancellationToken)
+    public async ValueTask Remove_ShouldDisposeMaterializedValue(CancellationToken cancellationToken)
     {
         var dictionary = new AsyncLazyDictionary<string, DisposableValue>();
         var value = new DisposableValue();
