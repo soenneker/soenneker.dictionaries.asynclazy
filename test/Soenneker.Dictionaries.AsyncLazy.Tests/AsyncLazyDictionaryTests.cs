@@ -93,7 +93,7 @@ public class AsyncLazyDictionaryTests : HostedUnitTest
         Func<CancellationToken, ValueTask<int>> factory = _ =>
         {
             Interlocked.Increment(ref counter);
-            return new ValueTask<int>(Task.Delay(100).ContinueWith(_ => 42));
+            return new ValueTask<int>(Task.Delay(100, cancellationToken: cancellationToken).ContinueWith(_ => 42));
         };
 
         // Act
@@ -127,7 +127,7 @@ public class AsyncLazyDictionaryTests : HostedUnitTest
             return 2;
         }, cancellationToken).AsTask();
 
-        await Task.WhenAll(firstEntered.Task, secondEntered.Task).WaitAsync(TimeSpan.FromSeconds(2));
+        await Task.WhenAll(firstEntered.Task, secondEntered.Task).WaitAsync(TimeSpan.FromSeconds(2), cancellationToken: cancellationToken);
         release.SetResult();
 
         (await first).Should().Be(1);
